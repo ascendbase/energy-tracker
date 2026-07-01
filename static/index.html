@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Energy Tracker</title>
+<style>
+  :root {
+    --glass: rgba(255, 255, 255, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.8);
+    --text: #1a1a1a;
+    --muted: #8a8a8e;
+    --accent: #000000;
+    --radius: 22px;
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+    --panel-bg: rgba(255, 255, 255, 0.75);
+    --panel-border: rgba(0, 0, 0, 0.05);
+    --danger: #ff3b30;
+    --success: #34c759;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html, body {
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: linear-gradient(160deg, #ffffff 0%, #e8e8ec 100%);
+    background-attachment: fixed;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 440px; background: var(--glass);
+    backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid var(--glass-border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 32px 28px; max-height: 90vh;
+    display: flex; flex-direction: column;
+  }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: var(--muted); margin-bottom: 22px; font-weight: 500; }
+  .tabs { display: flex; gap: 6px; background: rgba(0,0,0,0.04); border-radius: 14px; padding: 4px; margin-bottom: 22px; }
+  .tab {
+    flex: 1; text-align: center; padding: 10px 0; font-size: 14px; font-weight: 600;
+    color: var(--muted); border-radius: 11px; cursor: pointer;
+    transition: background 0.2s, color 0.2s; user-select: none;
+  }
+  .tab.active { background: #fff; color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .panel { display: none; overflow-y: auto; flex: 1; }
+  .panel.active { display: block; }
+  .group { display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  input {
+    width: 100%; padding: 14px 16px; font-size: 17px; font-weight: 500; color: var(--text);
+    background: rgba(255,255,255,0.7); border: 1px solid rgba(0,0,0,0.06); border-radius: 14px;
+    outline: none; transition: border-color 0.2s, background 0.2s, box-shadow 0.2s; font-family: inherit;
+  }
+  input::placeholder { color: #c2c2c7; font-weight: 400; }
+  input:focus { border-color: rgba(0,0,0,0.4); background: rgba(255,255,255,0.95); box-shadow: 0 0 0 4px rgba(0,0,0,0.05); }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  .fixed { font-size: 13px; color: var(--muted); text-align: center; padding: 10px; background: rgba(0,0,0,0.03); border-radius: 12px; margin-bottom: 22px; }
+  .fixed b { color: var(--text); }
+  .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+  .results { display: flex; flex-direction: column; gap: 12px; }
+  .result { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 16px; }
+  .result .label { display: flex; flex-direction: column; gap: 2px; }
+  .result .name { font-size: 15px; font-weight: 600; }
+  .result .formula { font-size: 11px; color: var(--muted); font-family: "SF Mono", ui-monospace, monospace; }
+  .result .value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+  .value.empty { color: #c2c2c7; font-weight: 500; }
+  .final { margin-top: 22px; }
+  .final .result { background: var(--text); border-color: var(--text); }
+  .final .result .name { color: #fff; }
+  .final .result .formula { color: rgba(255,255,255,0.5); }
+  .final .result .value { color: #fff; }
+  .final .result .value.empty { color: rgba(255,255,255,0.3); }
+  .save-btn {
+    width: 100%; margin-top: 12px; padding: 12px; font-size: 15px; font-weight: 600;
+    color: #fff; background: var(--success); border: none; border-radius: 14px;
+    cursor: pointer; transition: opacity 0.2s, transform 0.1s; font-family: inherit;
+  }
+  .save-btn:hover { opacity: 0.9; }
+  .save-btn:active { transform: scale(0.98); }
+  .save-btn:disabled { background: rgba(0,0,0,0.1); color: var(--muted); cursor: not-allowed; }
+  .save-btn.committed { background: var(--success); opacity: 0.6; }
+  .logs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .logs-list { display: flex; flex-direction: column; gap: 8px; }
+  .log-item { padding: 14px 16px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 14px; transition: border-color 0.2s; }
+  .log-item.editing { border-color: var(--accent); }
+  .log-item-header { display: flex; align-items: center; gap: 12px; }
+  .log-date { font-size: 14px; font-weight: 600; flex: 1; }
+  .log-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .log-edit-input { width: 80px; padding: 6px 10px; font-size: 16px; font-weight: 600; border: 1px solid var(--accent); border-radius: 8px; text-align: right; font-family: inherit; }
+  .log-edit-input.date-edit { width: 140px; text-align: left; }
+  .log-actions { display: flex; gap: 8px; }
+  .icon-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 16px; border: none; border-radius: 10px; cursor: pointer; background: rgba(0,0,0,0.06); color: var(--text); transition: background 0.2s; font-family: inherit; flex-shrink: 0; }
+  .icon-btn:hover { background: rgba(0,0,0,0.12); }
+  .icon-btn.danger { color: var(--danger); }
+  .icon-btn.danger:hover { background: rgba(255,59,48,0.1); }
+  .icon-btn.success { color: var(--success); }
+  .icon-btn.success:hover { background: rgba(52,199,89,0.1); }
+  .icon-btn.expand { font-size: 12px; }
+  .log-breakdown { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--panel-border); flex-wrap: wrap; gap: 6px; }
+  .log-breakdown.show { display: flex; }
+  .log-var-chip { font-size: 12px; font-weight: 600; padding: 4px 10px; background: rgba(0,0,0,0.04); border-radius: 8px; font-variant-numeric: tabular-nums; }
+  .log-var-chip .vn { color: var(--muted); font-weight: 500; }
+  .log-var-chip.zero { opacity: 0.4; }
+  .empty-state { text-align: center; color: var(--muted); padding: 40px 0; font-size: 15px; }
+  .logs-summary { font-size: 13px; color: var(--muted); margin-bottom: 14px; padding: 12px 16px; background: rgba(0,0,0,0.03); border-radius: 12px; }
+  .chat-container { display: flex; flex-direction: column; height: 100%; gap: 0; }
+  .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; min-height: 200px; }
+  .chat-msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
+  .chat-msg.user { align-self: flex-end; background: var(--text); color: #fff; border-bottom-right-radius: 4px; }
+  .chat-msg.assistant { align-self: flex-start; background: var(--panel-bg); border: 1px solid var(--panel-border); border-bottom-left-radius: 4px; }
+  .chat-msg.error { align-self: center; background: rgba(255,59,48,0.1); color: var(--danger); font-size: 13px; text-align: center; }
+  .chat-tool-badge { font-size: 11px; color: var(--muted); margin-top: 4px; font-style: italic; }
+  .chat-input-row { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
+  .chat-input { flex: 1; padding: 12px 16px; font-size: 15px; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; outline: none; background: rgba(255,255,255,0.7); font-family: inherit; transition: border-color 0.2s; }
+  .chat-input:focus { border-color: rgba(0,0,0,0.3); }
+  .chat-send { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 18px; border: none; border-radius: 50%; background: var(--text); color: #fff; cursor: pointer; transition: opacity 0.2s; flex-shrink: 0; }
+  .chat-send:disabled { opacity: 0.3; cursor: not-allowed; }
+  .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 12px 24px; background: var(--text); color: #fff; border-radius: 14px; font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 999; }
+  .toast.show { opacity: 1; }
+  @media (prefers-color-scheme: dark) {
+    :root { --glass: rgba(28, 28, 30, 0.6); --glass-border: rgba(255, 255, 255, 0.1); --text: #f5f5f7; --muted: #98989d; --accent: #ffffff; --panel-bg: rgba(255, 255, 255, 0.06); --panel-border: rgba(255,255,255,0.08); }
+    body { background: linear-gradient(160deg, #1c1c1e 0%, #000000 100%); }
+    .tabs { background: rgba(255,255,255,0.06); }
+    .tab.active { background: rgba(255,255,255,0.15); color: var(--text); box-shadow: none; }
+    input { background: rgba(255,255,255,0.08); color: var(--text); border-color: rgba(255,255,255,0.1); }
+    input::placeholder { color: #6a6a70; }
+    input:focus { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); box-shadow: 0 0 0 4px rgba(255,255,255,0.06); }
+    .fixed { background: rgba(255,255,255,0.06); }
+    .final .result { background: #fff; border-color: #fff; }
+    .final .result .name { color: #000; } .final .result .formula { color: rgba(0,0,0,0.5); } .final .result .value { color: #000; } .final .result .value.empty { color: rgba(0,0,0,0.3); }
+    .chat-input { background: rgba(255,255,255,0.08); color: var(--text); border-color: rgba(255,255,255,0.1); }
+    .chat-send { background: #fff; color: #000; } .chat-msg.user { background: #fff; color: #000; }
+    .icon-btn { background: rgba(255,255,255,0.08); } .icon-btn:hover { background: rgba(255,255,255,0.15); }
+    .logs-summary { background: rgba(255,255,255,0.06); } .log-var-chip { background: rgba(255,255,255,0.08); }
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Energy</h1>
+    <div class="subtitle">Track your daily energy score</div>
+    <div class="tabs">
+      <div class="tab active" data-tab="energy">Energy</div>
+      <div class="tab" data-tab="other">Other</div>
+      <div class="tab" data-tab="logs">Logs</div>
+      <div class="tab" data-tab="chat">Chat</div>
+    </div>
+
+    <!-- Energy Panel -->
+    <div class="panel active" id="panel-energy">
+      <div class="group">
+        <div class="field"><label for="fh">FH (hours)</label><input type="number" id="fh" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="fac">FAC</label><input type="number" id="fac" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="fic">FIC</label><input type="number" id="fic" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="tac">TAC</label><input type="number" id="tac" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="ec">EC</label><input type="number" id="ec" placeholder="0" step="any" inputmode="decimal"></div>
+      </div>
+      <div class="fixed">Fixed value &middot; <b>BMR = 1870</b></div>
+      <div class="section-title">Results</div>
+      <div class="results">
+        <div class="result"><div class="label"><span class="name">FS</span><span class="formula">FH &times; (BMR/24) + FAC + FIC</span></div><span class="value empty" id="fs">&mdash;</span></div>
+        <div class="result"><div class="label"><span class="name">CD</span><span class="formula">(BMR + TAC) &minus; EC</span></div><span class="value empty" id="cd">&mdash;</span></div>
+        <div class="result"><div class="label"><span class="name">TES</span><span class="formula">(FS + CD) / 100</span></div><span class="value empty" id="tes">&mdash;</span></div>
+      </div>
+    </div>
+
+    <!-- Other Panel -->
+    <div class="panel" id="panel-other">
+      <div class="group">
+        <div class="field"><label for="b">B</label><input type="number" id="b" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="nm">NM</label><input type="number" id="nm" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="trio">Trio (hours)</label><input type="number" id="trio" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="fmf">FMF</label><input type="number" id="fmf" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="sr">SR</label><input type="number" id="sr" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="p">P</label><input type="number" id="p" placeholder="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="sm">SM</label><input type="number" id="sm" placeholder="0" step="any" inputmode="decimal"></div>
+      </div>
+    </div>
+
+    <!-- Logs Panel -->
+    <div class="panel" id="panel-logs">
+      <div class="logs-header"><div class="section-title" style="margin:0">Daily Entries</div></div>
+      <div class="logs-summary" id="logs-summary"></div>
+      <div class="logs-list" id="logs-list"></div>
+    </div>
+
+    <!-- Chat Panel -->
+    <div class="panel" id="panel-chat">
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="chat-msg assistant">Hey! I am your energy tracker AI. Tell me values to log throughout the day, then say "save" to commit. Try: "set FH to 16"</div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" class="chat-input" id="chat-input" placeholder="Ask me anything..." autocomplete="off">
+          <button class="chat-send" id="chat-send">&#x27A4;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Final TS -->
+    <div class="final">
+      <div class="result">
+        <div class="label"><span class="name">TS</span><span class="formula">TES + B + NM + Trio + FMF + SR + P + SM</span></div>
+        <span class="value empty" id="ts">&mdash;</span>
+      </div>
+      <button class="save-btn" id="save-btn" disabled>Save Today&#39;s Entry</button>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+  const BMR = 1870;
+  const VAR_KEYS = ['fh','fac','fic','tac','ec','b','nm','trio','fmf','sr','p','sm'];
+  const VAR_LABELS = {fh:'FH',fac:'FAC',fic:'FIC',tac:'TAC',ec:'EC',b:'B',nm:'NM',trio:'Trio',fmf:'FMF',sr:'SR',p:'P',sm:'SM'};
+
+  // ── Tab switching ──
+  var tabs = document.querySelectorAll('.tab');
+  var panels = document.querySelectorAll('.panel');
+  tabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      tabs.forEach(function(t) { t.classList.remove('active'); });
+      panels.forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      if (tab.dataset.tab === 'logs') loadCommitted();
+    });
+  });
+
+  // ── Inputs & outputs ──
+  var inputs = {};
+  VAR_KEYS.forEach(function(k) { inputs[k] = document.getElementById(k); });
+  var outputs = {
+    fs: document.getElementById('fs'), cd: document.getElementById('cd'),
+    tes: document.getElementById('tes'), ts: document.getElementById('ts')
+  };
+  var saveBtn = document.getElementById('save-btn');
+
+  function num(v) { if (v === '' || v === null || v === undefined) return NaN; return parseFloat(v); }
+  function num0(v) { var n = num(v); return isFinite(n) ? n : 0; }
+  function fmt(n) { if (n === null || n === undefined || !isFinite(n)) return '\u2014'; var r = Math.round((n + Number.EPSILON) * 100) / 100; return r.toLocaleString(undefined, { maximumFractionDigits: 2 }); }
+  function setEmpty(el) { el.textContent = '\u2014'; el.classList.add('empty'); }
+  function setValue(el, val) { el.textContent = fmt(val); el.classList.remove('empty'); }
+
+  var currentTS = NaN;
+
+  function calc() {
+    var fh = num(inputs.fh.value);
+    var fsVarsEntered = isFinite(fh);
+    if (!fsVarsEntered) {
+      setEmpty(outputs.fs); setEmpty(outputs.cd); setEmpty(outputs.tes);
+      setEmpty(outputs.ts); currentTS = NaN; saveBtn.disabled = true; return;
+    }
+    var fac = num0(inputs.fac.value), fic = num0(inputs.fic.value);
+    var tac = num(inputs.tac.value), ec = num(inputs.ec.value);
+    var cdVarsEntered = isFinite(tac) && isFinite(ec);
+    var b = num0(inputs.b.value), nm = num0(inputs.nm.value), trio = num0(inputs.trio.value);
+    var fmf = num0(inputs.fmf.value), sr = num0(inputs.sr.value), p = num0(inputs.p.value), sm = num0(inputs.sm.value);
+    var fs = (fh * (BMR / 24)) + fac + fic;
+    var cd = cdVarsEntered ? ((BMR + tac) - ec) : 0;
+    var tes = (fs + cd) / 100;
+    var ts = tes + b + nm + trio + fmf + sr + p + sm;
+    setValue(outputs.fs, fs); setValue(outputs.cd, cd); setValue(outputs.tes, tes); setValue(outputs.ts, ts);
+    currentTS = ts; saveBtn.disabled = false;
+  }
+
+  // ── Toast ──
+  function toast(msg) { var t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(function() { t.classList.remove('show'); }, 2000); }
+
+  // ── Draft auto-save (debounced) ──
+  var saveTimer = null;
+  function autoSaveDraft() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(async function() {
+      var payload = {};
+      VAR_KEYS.forEach(function(k) {
+        var v = inputs[k].value;
+        if (v !== '') payload[k] = parseFloat(v);
+      });
+      if (Object.keys(payload).length === 0) return;
+      try {
+        await fetch('/api/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      } catch(e) { /* silent — draft saves are best-effort */ }
+    }, 800);
+  }
+
+  // Input listeners: calculate + auto-save draft
+  Object.values(inputs).forEach(function(el) {
+    el.addEventListener('input', function() { calc(); autoSaveDraft(); });
+  });
+
+  // ── Load draft on page open ──
+  async function loadDraft() {
+    try {
+      var res = await fetch('/api/draft');
+      var data = await res.json();
+      if (data.entry) {
+        VAR_KEYS.forEach(function(k) {
+          if (data.entry[k] !== null && data.entry[k] !== undefined) {
+            inputs[k].value = data.entry[k];
+          }
+        });
+        if (data.entry.is_committed) saveBtn.classList.add('committed');
+      }
+      calc();
+    } catch(e) { console.error(e); calc(); }
+  }
+
+  // ── Sync draft after AI chat (reload inputs from server) ──
+  async function syncDraftFromServer() {
+    try {
+      var res = await fetch('/api/draft');
+      var data = await res.json();
+      if (data.entry) {
+        VAR_KEYS.forEach(function(k) {
+          if (data.entry[k] !== null && data.entry[k] !== undefined) {
+            inputs[k].value = data.entry[k];
+          } else {
+            inputs[k].value = '';
+          }
+        });
+      }
+      calc();
+    } catch(e) { console.error(e); }
+  }
+
+  // ── Save = Commit ──
+  saveBtn.addEventListener('click', async function() {
+    if (isNaN(currentTS)) return;
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving...';
+    try {
+      var res = await fetch('/api/draft/commit', { method: 'POST' });
+      var data = await res.json();
+      if (data.success) { toast('Committed! TS=' + fmt(data.entry.ts)); saveBtn.classList.add('committed'); saveBtn.textContent = 'Saved'; }
+      else toast('Failed to commit');
+    } catch(e) { toast('Error: ' + e.message); }
+    saveBtn.disabled = false; saveBtn.textContent = "Save Today\u2019s Entry";
+  });
+
+  // ── Committed entries (Logs tab) ──
+  var entriesData = [];
+  async function loadCommitted() {
+    try {
+      var res = await fetch('/api/entries');
+      var data = await res.json();
+      entriesData = data.entries || [];
+      renderEntries();
+    } catch(e) { console.error(e); }
+  }
+
+  function renderEntries() {
+    var list = document.getElementById('logs-list');
+    var summary = document.getElementById('logs-summary');
+    if (entriesData.length === 0) {
+      list.innerHTML = '<div class="empty-state">No committed entries yet. Fill in values and tap Save.</div>';
+      summary.textContent = ''; return;
+    }
+    var values = entriesData.map(function(l) { return l.ts; }).filter(function(v) { return v !== null; });
+    if (values.length === 0) { summary.textContent = entriesData.length + ' entries'; }
+    else {
+      var avg = values.reduce(function(a,b) { return a+b; }, 0) / values.length;
+      summary.innerHTML = '<b>' + entriesData.length + '</b> entries &middot; Avg TS <b>' + fmt(avg) + '</b> &middot; Min <b>' + fmt(Math.min.apply(null, values)) + '</b> &middot; Max <b>' + fmt(Math.max.apply(null, values)) + '</b>';
+    }
+    list.innerHTML = entriesData.map(function(entry) {
+      var chips = VAR_KEYS.map(function(k) {
+        var v = entry[k];
+        if (v === null || v === undefined) return '';
+        var isZero = v === 0 || v === 0.0;
+        return '<span class="log-var-chip' + (isZero ? ' zero' : '') + '"><span class="vn">' + VAR_LABELS[k] + '</span> ' + fmt(v) + '</span>';
+      }).join('');
+      return '<div class="log-item" data-id="' + entry.id + '">' +
+        '<div class="log-item-header">' +
+          '<span class="log-date">' + entry.date + '</span>' +
+          '<span class="log-value">' + fmt(entry.ts) + '</span>' +
+          '<div class="log-actions">' +
+            '<button class="icon-btn expand" onclick="toggleBreakdown(' + entry.id + ')">&#9662;</button>' +
+            '<button class="icon-btn danger" onclick="deleteEntry(' + entry.id + ')">&times;</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="log-breakdown" id="breakdown-' + entry.id + '">' + chips + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.toggleBreakdown = function(id) { var bd = document.getElementById('breakdown-' + id); if (bd) bd.classList.toggle('show'); };
+
+  window.deleteEntry = async function(id) {
+    try {
+      var res = await fetch('/api/entries/' + id, { method: 'DELETE' });
+      var data = await res.json();
+      if (data.success) { toast('Deleted'); await loadCommitted(); }
+      else toast('Delete failed');
+    } catch(e) { toast('Error: ' + e.message); }
+  };
+
+  // ── Chat ──
+  var chatMessages = document.getElementById('chat-messages');
+  var chatInput = document.getElementById('chat-input');
+  var chatSend = document.getElementById('chat-send');
+  var chatHistory = [];
+
+  async function sendChat() {
+    var msg = chatInput.value.trim();
+    if (!msg) return;
+    chatInput.value = ''; chatSend.disabled = true;
+    chatMessages.innerHTML += '<div class="chat-msg user">' + escapeHtml(msg) + '</div>';
+    chatMessages.innerHTML += '<div class="chat-msg assistant" id="thinking">Thinking...</div>';
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    try {
+      var res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, history: chatHistory }) });
+      var data = await res.json();
+      var thinking = document.getElementById('thinking'); if (thinking) thinking.remove();
+      if (data.error && data.error === 'no_api_key') {
+        chatMessages.innerHTML += '<div class="chat-msg error">' + escapeHtml(data.reply) + '</div>';
+      } else {
+        chatMessages.innerHTML += '<div class="chat-msg assistant">' + escapeHtml(data.reply) + '</div>';
+        if (data.tool_calls && data.tool_calls.length > 0) {
+          var tools = data.tool_calls.map(function(t) { return t.tool; }).join(', ');
+          chatMessages.innerHTML += '<div class="chat-tool-badge">Used: ' + escapeHtml(tools) + '</div>';
+          // Sync input fields from server draft if set_variables was called
+          var changedDraft = data.tool_calls.some(function(t) { return t.tool === 'set_variables' || t.tool === 'commit_draft'; });
+          if (changedDraft) await syncDraftFromServer();
+        }
+        chatHistory.push({ role: 'user', content: msg });
+        chatHistory.push({ role: 'assistant', content: data.reply });
+        if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+      }
+    } catch(e) { var t = document.getElementById('thinking'); if (t) t.remove(); chatMessages.innerHTML += '<div class="chat-msg error">Error: ' + escapeHtml(e.message) + '</div>'; }
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    chatSend.disabled = false;
+  }
+
+  function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\n/g,'<br>'); }
+  chatSend.addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendChat(); });
+
+  // ── Init ──
+  loadDraft();
+</script>
+</body>
+</html>

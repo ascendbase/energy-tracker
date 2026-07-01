@@ -1,0 +1,12 @@
+Now i need you to also add these:
+
+User inputs:
+1. NM
+2. Trio (hours)
+3. FMF
+4. SR
+5. P
+6. SM
+
+Formulas: 
+- TS = TES + NM + Trio + FMF + SR + P + SM

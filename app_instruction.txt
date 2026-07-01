@@ -1,0 +1,20 @@
+i need you to build an web app which calculates the formulas results based on the users inputs.
+There are multiple user variables inputs:
+1. FH
+2. AC
+3. IC
+4. B
+5. CW
+6. HW
+
+There is 1 fixed value variable used in the formulas:
+1. BMR = 1870
+
+Formulas you need to calculate and show the results:
+1. FS = ((FH / 24)*BMR)+AC+IC
+2. FWC = (BMR + AC + IC) - ((24-FH)*2000)
+3. FS / BMR Ratio = FS / BMR
+4. TES = (FS + FWC) / 100 + (B + CW + HW) 
+
+UI / Design:
+I want you to use the minimalistic, modern black and white / transparent IOS 27 like style. 

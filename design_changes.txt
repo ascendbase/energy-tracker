@@ -1,0 +1,5 @@
+Now you need to put different inputs and outputs in clickable close / open (just click on the tab to open mechanism, no need for any additional signs) tabs.
+Tabs:
+- Energy: everything mentioned in app_instruction.txt file
+- Other: new variables mentioned in D:\energy_app\next steps.txt file
+- Final: TS (non clickable, always showing at the bottom)
