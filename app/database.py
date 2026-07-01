@@ -46,9 +46,9 @@ def _get_conn():
         else:
             os.makedirs(os.path.dirname(_LOCAL_DB), exist_ok=True)
             _thread_local.conn = sqlite3.connect(_LOCAL_DB, check_same_thread=False)
-        _thread_local.conn.row_factory = sqlite3.Row
-        _thread_local.conn.execute("PRAGMA journal_mode=WAL;")
-        _thread_local.conn.execute("PRAGMA foreign_keys=ON;")
+            _thread_local.conn.row_factory = sqlite3.Row
+            _thread_local.conn.execute("PRAGMA journal_mode=WAL;")
+            _thread_local.conn.execute("PRAGMA foreign_keys=ON;")
     return _thread_local.conn
 
 
@@ -106,8 +106,37 @@ def init_db():
 
 # ── Helpers ───────────────────────────────────────────────────────
 
-def _row_to_dict(row: sqlite3.Row) -> dict:
-    return dict(row)
+def _row_to_dict(row, cursor=None) -> dict:
+    """Convert a database row to dict. Works with both sqlite3.Row and libsql rows."""
+    if row is None:
+        return {}
+    # sqlite3.Row supports dict() conversion
+    try:
+        return dict(row)
+    except (TypeError, ValueError):
+        pass
+    # libsql returns tuples — use cursor description for column names
+    if cursor and hasattr(cursor, 'description') and cursor.description:
+        cols = [d[0] for d in cursor.description]
+        return dict(zip(cols, row))
+    # Last resort: check if it has keys()
+    if hasattr(row, 'keys'):
+        return {k: row[k] for k in row.keys()}
+    return {}
+
+
+def _fetch_one(conn, query, params=()):
+    """Execute query and return a single row as dict. Works with sqlite3 and libsql."""
+    cur = conn.execute(query, params)
+    row = cur.fetchone()
+    return _row_to_dict(row, cur) if row else None
+
+
+def _fetch_all(conn, query, params=()):
+    """Execute query and return all rows as list of dicts. Works with sqlite3 and libsql."""
+    cur = conn.execute(query, params)
+    rows = cur.fetchall()
+    return [_row_to_dict(row, cur) for row in rows]
 
 
 def _compute_ts(values: dict) -> float | None:
@@ -127,10 +156,7 @@ def get_draft(date_str: str | None = None) -> dict | None:
     if date_str is None:
         date_str = today_str()
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM entries WHERE date = ?", (date_str,)
-        ).fetchone()
-        return _row_to_dict(row) if row else None
+        return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,))
 
 
 def save_draft(date_str: str, values: dict) -> dict:
@@ -161,8 +187,7 @@ def save_draft(date_str: str, values: dict) -> dict:
                 params
             )
             conn.commit()
-            row = conn.execute("SELECT * FROM entries WHERE date = ?", (date_str,)).fetchone()
-            return _row_to_dict(row) if row else {"date": date_str, "ts": ts}
+            return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,)) or {"date": date_str, "ts": ts}
     else:
         cols = ", ".join(_ENTRY_COLUMNS)
         placeholders = ", ".join(["?"] * len(_ENTRY_COLUMNS))
@@ -174,8 +199,7 @@ def save_draft(date_str: str, values: dict) -> dict:
                 params
             )
             conn.commit()
-            row = conn.execute("SELECT * FROM entries WHERE id = ?", (cur.lastrowid,)).fetchone()
-            return _row_to_dict(row) if row else {"date": date_str, "ts": ts}
+            return _fetch_one(conn, "SELECT * FROM entries WHERE id = ?", (cur.lastrowid,)) or {"date": date_str, "ts": ts}
 
 
 def commit_draft(date_str: str | None = None) -> dict | None:
@@ -187,8 +211,8 @@ def commit_draft(date_str: str | None = None) -> dict | None:
             "UPDATE entries SET is_committed = 1, updated_at = datetime('now') WHERE date = ?",
             (date_str,)
         )
-        row = conn.execute("SELECT * FROM entries WHERE date = ?", (date_str,)).fetchone()
-        return _row_to_dict(row) if row else None
+        conn.commit()
+        return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,))
 
 
 # ── Committed entry operations ────────────────────────────────────
@@ -196,27 +220,18 @@ def commit_draft(date_str: str | None = None) -> dict | None:
 def get_committed_entries() -> list[dict]:
     """Get all committed entries, ordered by date descending."""
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM entries WHERE is_committed = 1 ORDER BY date DESC"
-        ).fetchall()
-        return [_row_to_dict(r) for r in rows]
+        return _fetch_all(conn, "SELECT * FROM entries WHERE is_committed = 1 ORDER BY date DESC")
 
 
 def get_entry_by_date(date_str: str) -> dict | None:
     """Get entry (draft or committed) by date."""
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM entries WHERE date = ?", (date_str,)
-        ).fetchone()
-        return _row_to_dict(row) if row else None
+        return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,))
 
 
 def get_entry_by_id(entry_id: int) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM entries WHERE id = ?", (entry_id,)
-        ).fetchone()
-        return _row_to_dict(row) if row else None
+        return _fetch_one(conn, "SELECT * FROM entries WHERE id = ?", (entry_id,))
 
 
 def delete_entry(entry_id: int) -> bool:
@@ -230,11 +245,11 @@ def delete_entry(entry_id: int) -> bool:
 def get_stats(days: int = 30) -> dict:
     """Get statistics for committed entries over the last N days."""
     with get_conn() as conn:
-        rows = conn.execute("""
+        rows = _fetch_all(conn, """
             SELECT * FROM entries
             WHERE is_committed = 1 AND date >= date('now', ?)
             ORDER BY date ASC
-        """, (f"-{days} days",)).fetchall()
+        """, (f"-{days} days",))
 
         if not rows:
             return {
@@ -243,7 +258,7 @@ def get_stats(days: int = 30) -> dict:
                 "trend": None, "values": []
             }
 
-        entries = [_row_to_dict(r) for r in rows]
+        entries = rows
         ts_values = [e["ts"] for e in entries if e["ts"] is not None]
         if not ts_values:
             return {
