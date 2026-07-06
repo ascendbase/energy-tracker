@@ -7,9 +7,57 @@ tool calls, feeds results back, and returns the final text response.
 
 import os
 import json
+import re
 from openai import OpenAI
 from .tools import TOOL_SCHEMAS, execute_tool
 from .calculator import VARIABLES, VARIABLE_LABELS, BMR
+
+
+# ── DSML parser ───────────────────────────────────────────────────
+# Some models (DeepSeek, GLM) emit tool calls as raw text in DSML format
+# instead of using the OpenAI tool_calls field. We detect and parse it.
+
+_DSML_INVOKE_RE = re.compile(
+    r'<\|DSML\|invoke\s+name="([^"]+)"\s*>(.*?)</\|DSML\|invoke>',
+    re.DOTALL
+)
+_DSML_PARAM_RE = re.compile(
+    r'<\|DSML\|parameter\s+name="([^"]+)"[^>]*>(.*?)</\|DSML\|parameter>',
+    re.DOTALL
+)
+
+
+def _parse_dsml_tool_calls(text: str) -> list[dict]:
+    """
+    Parse DSML-format tool calls from text.
+    Returns list of {"name": str, "arguments": dict} or [] if none found.
+    """
+    calls = []
+    for match in _DSML_INVOKE_RE.finditer(text):
+        tool_name = match.group(1)
+        params_text = match.group(2)
+        arguments = {}
+        for param_match in _DSML_PARAM_RE.finditer(params_text):
+            key = param_match.group(1)
+            val_str = param_match.group(2).strip()
+            # Try to parse as JSON (number, bool, etc.), fallback to string
+            try:
+                arguments[key] = json.loads(val_str)
+            except (json.JSONDecodeError, ValueError):
+                arguments[key] = val_str
+        calls.append({"name": tool_name, "arguments": arguments})
+    return calls
+
+
+def _strip_dsml(text: str) -> str:
+    """Remove DSML markup from text, leaving only clean content."""
+    # Remove the entire tool_calls block
+    text = re.sub(r'<\|DSML\|tool_calls>.*?</\|DSML\|tool_calls>', '', text, flags=re.DOTALL)
+    # Remove any leftover invoke/parameter tags
+    text = re.sub(r'<\|DSML\|invoke[^>]*>.*?</\|DSML\|invoke>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<\|DSML\|parameter[^>]*/>', '', text)
+    text = re.sub(r'<\|DSML\|/?>', '', text)
+    return text.strip()
 
 # ── Load .env (needed for uvicorn --reload which spawns a child process) ──
 try:
@@ -151,7 +199,7 @@ def chat(user_message: str, history: list[dict] | None = None,
 
     for _round in range(MAX_TOOL_ROUNDS):
         # After just 1 round of tool-calling, force the model to stop and respond
-        if _round >= 1:
+        if _round >= 2:
             tool_choice = "none"
         else:
             tool_choice = "auto"
@@ -165,46 +213,74 @@ def chat(user_message: str, history: list[dict] | None = None,
         )
 
         msg = response.choices[0].message
+        content = msg.content or ""
 
-        # If no tool calls, we're done — return the text response
-        if not msg.tool_calls:
+        # Check for DSML-format tool calls in text (some models don't use the API properly)
+        dsml_calls = _parse_dsml_tool_calls(content)
+
+        # If no tool calls (neither API nor DSML), we're done
+        if not msg.tool_calls and not dsml_calls:
+            clean_reply = _strip_dsml(content)
             return {
-                "reply": msg.content or "",
+                "reply": clean_reply,
                 "tool_calls": all_tool_calls,
                 "model": use_model,
             }
 
-        # Add the assistant's message (with tool calls) to the conversation
-        messages.append(msg.model_dump())
+        # If the model used proper API tool_calls, process those
+        if msg.tool_calls:
+            messages.append(msg.model_dump())
+            for tc in msg.tool_calls:
+                tool_name = tc.function.name
+                try:
+                    tool_args = json.loads(tc.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = {}
 
-        # Execute each tool call
-        for tc in msg.tool_calls:
-            tool_name = tc.function.name
-            try:
-                tool_args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                tool_args = {}
+                result = execute_tool(tool_name, tool_args)
 
-            result = execute_tool(tool_name, tool_args)
+                all_tool_calls.append({
+                    "tool": tool_name,
+                    "arguments": tool_args,
+                    "result": json.loads(result),
+                })
 
-            all_tool_calls.append({
-                "tool": tool_name,
-                "arguments": tool_args,
-                "result": json.loads(result),
-            })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result + "\n\nYou have the result. Respond to the user now. Do NOT call more tools.",
+                })
 
-            # Feed the tool result back with a stop hint
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result + "\n\nYou have the result. Respond to the user now. Do NOT call more tools.",
-            })
+        # If the model emitted DSML tool calls in text, process those
+        elif dsml_calls:
+            # Add the raw text as assistant message
+            messages.append({"role": "assistant", "content": content})
+
+            for dc in dsml_calls:
+                tool_name = dc["name"]
+                tool_args = dc["arguments"]
+
+                result = execute_tool(tool_name, tool_args)
+
+                all_tool_calls.append({
+                    "tool": tool_name,
+                    "arguments": tool_args,
+                    "result": json.loads(result),
+                })
+
+                # Feed result back as a user message (since we can't use tool role without tool_call_id)
+                messages.append({
+                    "role": "user",
+                    "content": f"[Tool result: {tool_name}]\n{result}\n\nRespond to the user based on this result. Do NOT call more tools.",
+                })
 
     # If we hit the round limit, return what we have
+    last_content = ""
+    if messages and messages[-1].get("role") == "assistant":
+        last_content = _strip_dsml(messages[-1].get("content", ""))
     return {
-        "reply": "I reached the maximum number of tool calls. Please try "
-                 "simplifying your request.",
+        "reply": last_content or "I reached the maximum number of tool calls. Please try simplifying your request.",
         "tool_calls": all_tool_calls,
         "model": use_model,
-        "error": "max_rounds",
+        "error": "max_rounds" if not last_content else None,
     }
