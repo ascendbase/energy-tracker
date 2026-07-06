@@ -103,6 +103,20 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_committed ON entries(is_committed)")
 
+        # ── Notes table ──
+        note_cols = [r[1] for r in conn.execute("PRAGMA table_info(notes)").fetchall()]
+        if not note_cols:
+            conn.execute("""
+                CREATE TABLE notes (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title      TEXT NOT NULL DEFAULT '',
+                    content    TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at)")
+
 
 # ── Helpers ───────────────────────────────────────────────────────
 
@@ -293,3 +307,66 @@ def get_stats(days: int = 30) -> dict:
             "values": [{"date": e["date"], "ts": e["ts"]} for e in entries],
             "var_avgs": var_avgs,
         }
+
+
+# ── Notes CRUD ────────────────────────────────────────────────────
+
+def create_note(title: str, content: str = "") -> dict:
+    """Create a new note."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO notes (title, content) VALUES (?, ?)",
+            (title, content)
+        )
+        conn.commit()
+        return _fetch_one(conn, "SELECT * FROM notes WHERE id = ?", (cur.lastrowid,))
+
+
+def get_all_notes() -> list[dict]:
+    """Get all notes, ordered by most recently updated."""
+    with get_conn() as conn:
+        return _fetch_all(conn, "SELECT * FROM notes ORDER BY updated_at DESC")
+
+
+def get_note(note_id: int) -> dict | None:
+    with get_conn() as conn:
+        return _fetch_one(conn, "SELECT * FROM notes WHERE id = ?", (note_id,))
+
+
+def update_note(note_id: int, title: str | None = None,
+                content: str | None = None) -> dict | None:
+    """Update a note. Only provided fields are changed."""
+    sets = []
+    params = []
+    if title is not None:
+        sets.append("title = ?")
+        params.append(title)
+    if content is not None:
+        sets.append("content = ?")
+        params.append(content)
+    if not sets:
+        return get_note(note_id)
+    sets.append("updated_at = datetime('now')")
+    params.append(note_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE notes SET {', '.join(sets)} WHERE id = ?", params)
+        conn.commit()
+        return _fetch_one(conn, "SELECT * FROM notes WHERE id = ?", (note_id,))
+
+
+def delete_note(note_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def search_notes(query: str) -> list[dict]:
+    """Search notes by title or content."""
+    pattern = f"%{query}%"
+    with get_conn() as conn:
+        return _fetch_all(
+            conn,
+            "SELECT * FROM notes WHERE title LIKE ? OR content LIKE ? ORDER BY updated_at DESC",
+            (pattern, pattern)
+        )

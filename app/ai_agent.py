@@ -73,6 +73,12 @@ or "commit" or "log today".
 6. delete_entry — Delete a committed entry by ID.
 7. get_stats — Stats for committed entries (avg, min, max, trend, per-var).
 8. get_today_date — Get today's date.
+9. create_note — Create a note with title and optional content.
+10. get_all_notes — List all notes (id + title + preview).
+11. get_note — Read a single note by ID.
+12. update_note — Update a note's title and/or content by ID.
+13. delete_note — Delete a note by ID.
+14. search_notes — Search notes by title or content.
 
 ## Key behaviors
 - When the user says "set FH to 16" → call set_variables immediately with ONLY \
@@ -82,6 +88,11 @@ that variable. Do NOT ask for other variables. A single variable is enough.
 - When the user says "save" or "commit" or "I'm done for today" → call commit_draft.
 - When the user asks "what is my X today?" → call get_draft.
 - When the user asks for stats → call get_stats.
+- When the user says "create a note" or "write this down" → call create_note \
+with the title and content.
+- When the user asks "show my notes" → call get_all_notes.
+- When the user asks "find my note about X" → call search_notes.
+- When editing/deleting notes → use get_all_notes first to find the ID.
 - After set_variables, confirm what was saved and show the computed TS (if calculable).
 - Be concise. Show numbers, not paragraphs.
 """

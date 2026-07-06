@@ -175,6 +175,56 @@ def chat_endpoint(req: ChatRequest):
     return result
 
 
+# ── API: Notes CRUD ───────────────────────────────────────────────
+
+class NoteCreateRequest(BaseModel):
+    title: str
+    content: str = ""
+
+
+class NoteUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
+@app.get("/api/notes")
+def get_notes(search: Optional[str] = None):
+    """Get all notes, or search by query."""
+    if search:
+        return {"notes": db.search_notes(search)}
+    return {"notes": db.get_all_notes()}
+
+
+@app.post("/api/notes")
+def create_note(req: NoteCreateRequest):
+    note = db.create_note(req.title, req.content)
+    return {"success": True, "note": note}
+
+
+@app.get("/api/notes/{note_id}")
+def get_note(note_id: int):
+    note = db.get_note(note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    return {"note": note}
+
+
+@app.patch("/api/notes/{note_id}")
+def update_note(note_id: int, req: NoteUpdateRequest):
+    note = db.update_note(note_id, req.title, req.content)
+    if not note:
+        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    return {"success": True, "note": note}
+
+
+@app.delete("/api/notes/{note_id}")
+def delete_note(note_id: int):
+    deleted = db.delete_note(note_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Note {note_id} not found")
+    return {"success": True}
+
+
 # ── Health check ──────────────────────────────────────────────────
 
 @app.get("/api/health")

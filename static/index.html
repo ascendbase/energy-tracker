@@ -106,6 +106,21 @@
   .log-var-chip.zero { opacity: 0.4; }
   .empty-state { text-align: center; color: var(--muted); padding: 40px 0; font-size: 15px; }
   .logs-summary { font-size: 13px; color: var(--muted); margin-bottom: 14px; padding: 12px 16px; background: rgba(0,0,0,0.03); border-radius: 12px; }
+
+  /* Notes */
+  .notes-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .notes-list { display: flex; flex-direction: column; gap: 8px; }
+  .note-item { padding: 14px 16px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 14px; transition: border-color 0.2s; }
+  .note-item.expanded { border-color: var(--accent); }
+  .note-title { font-size: 15px; font-weight: 600; flex: 1; cursor: pointer; }
+  .note-preview { font-size: 13px; color: var(--muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note-content-area { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
+  .note-content-area.show { display: block; }
+  .note-textarea { width: 100%; min-height: 120px; padding: 12px; font-size: 15px; font-family: inherit; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; background: rgba(255,255,255,0.7); color: var(--text); resize: vertical; outline: none; }
+  .note-textarea:focus { border-color: rgba(0,0,0,0.4); }
+  .note-title-input { width: 100%; padding: 8px 12px; font-size: 15px; font-weight: 600; border: 1px solid var(--accent); border-radius: 8px; font-family: inherit; margin-bottom: 8px; }
+  .add-note-btn { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; color: var(--text); background: rgba(0,0,0,0.06); border: none; border-radius: 14px; cursor: pointer; font-family: inherit; transition: background 0.2s; margin-bottom: 12px; }
+  .add-note-btn:hover { background: rgba(0,0,0,0.12); }
   .chat-container { display: flex; flex-direction: column; height: 100%; gap: 0; }
   .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px; min-height: 200px; }
   .chat-msg { max-width: 85%; padding: 12px 16px; border-radius: 18px; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
@@ -135,6 +150,8 @@
     .chat-send { background: #fff; color: #000; } .chat-msg.user { background: #fff; color: #000; }
     .icon-btn { background: rgba(255,255,255,0.08); } .icon-btn:hover { background: rgba(255,255,255,0.15); }
     .logs-summary { background: rgba(255,255,255,0.06); } .log-var-chip { background: rgba(255,255,255,0.08); }
+    .add-note-btn { background: rgba(255,255,255,0.08); } .add-note-btn:hover { background: rgba(255,255,255,0.15); }
+    .note-textarea { background: rgba(255,255,255,0.08); color: var(--text); border-color: rgba(255,255,255,0.1); }
   }
 </style>
 </head>
@@ -146,6 +163,7 @@
       <div class="tab active" data-tab="energy">Energy</div>
       <div class="tab" data-tab="other">Other</div>
       <div class="tab" data-tab="logs">Logs</div>
+      <div class="tab" data-tab="notes">Notes</div>
       <div class="tab" data-tab="chat">Chat</div>
     </div>
 
@@ -187,6 +205,13 @@
       <div class="logs-list" id="logs-list"></div>
     </div>
 
+    <!-- Notes Panel -->
+    <div class="panel" id="panel-notes">
+      <div class="notes-header"><div class="section-title" style="margin:0">Notes</div></div>
+      <button class="add-note-btn" id="add-note-btn">+ New Note</button>
+      <div class="notes-list" id="notes-list"></div>
+    </div>
+
     <!-- Chat Panel -->
     <div class="panel" id="panel-chat">
       <div class="chat-container">
@@ -226,6 +251,7 @@
       tab.classList.add('active');
       document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
       if (tab.dataset.tab === 'logs') loadCommitted();
+      if (tab.dataset.tab === 'notes') loadNotes();
     });
   });
 
@@ -395,6 +421,89 @@
     } catch(e) { toast('Error: ' + e.message); }
   };
 
+  // ── Notes ──
+  var notesData = [];
+
+  async function loadNotes() {
+    try {
+      var res = await fetch('/api/notes');
+      var data = await res.json();
+      notesData = data.notes || [];
+      renderNotes();
+    } catch(e) { console.error(e); }
+  }
+
+  function renderNotes() {
+    var list = document.getElementById('notes-list');
+    if (notesData.length === 0) {
+      list.innerHTML = '<div class="empty-state">No notes yet. Tap "+ New Note" or ask the AI to create one.</div>';
+      return;
+    }
+    list.innerHTML = notesData.map(function(note) {
+      var preview = (note.content || '').substring(0, 60);
+      return '<div class="note-item" data-id="' + note.id + '">' +
+        '<div class="log-item-header">' +
+          '<span class="note-title" onclick="toggleNote(' + note.id + ')">' + escapeHtml(note.title || '(untitled)') + '</span>' +
+          '<div class="log-actions">' +
+            '<button class="icon-btn danger" onclick="deleteNote(' + note.id + ')">&times;</button>' +
+          '</div>' +
+        '</div>' +
+        (preview ? '<div class="note-preview">' + escapeHtml(preview) + '</div>' : '') +
+        '<div class="note-content-area" id="note-area-' + note.id + '">' +
+          '<input type="text" class="note-title-input" id="note-title-' + note.id + '" value="' + escapeHtml(note.title || '') + '" placeholder="Title">' +
+          '<textarea class="note-textarea" id="note-content-' + note.id + '" placeholder="Write something...">' + escapeHtml(note.content || '') + '</textarea>' +
+          '<div style="display:flex;gap:8px;margin-top:8px">' +
+            '<button class="icon-btn success" onclick="saveNote(' + note.id + ')">&#10003; Save</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.toggleNote = function(id) {
+    var area = document.getElementById('note-area-' + id);
+    var item = document.querySelector('.note-item[data-id="' + id + '"]');
+    if (area) {
+      area.classList.toggle('show');
+      if (area.classList.contains('show')) item.classList.add('expanded');
+      else item.classList.remove('expanded');
+    }
+  };
+
+  window.saveNote = async function(id) {
+    var title = document.getElementById('note-title-' + id).value;
+    var content = document.getElementById('note-content-' + id).value;
+    try {
+      var res = await fetch('/api/notes/' + id, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title, content: content })
+      });
+      var data = await res.json();
+      if (data.success) { toast('Note saved'); await loadNotes(); }
+      else toast('Save failed');
+    } catch(e) { toast('Error: ' + e.message); }
+  };
+
+  window.deleteNote = async function(id) {
+    try {
+      var res = await fetch('/api/notes/' + id, { method: 'DELETE' });
+      var data = await res.json();
+      if (data.success) { toast('Deleted'); await loadNotes(); }
+      else toast('Delete failed');
+    } catch(e) { toast('Error: ' + e.message); }
+  };
+
+  document.getElementById('add-note-btn').addEventListener('click', async function() {
+    try {
+      var res = await fetch('/api/notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'New Note', content: '' })
+      });
+      var data = await res.json();
+      if (data.success) { await loadNotes(); toast('Note created'); }
+    } catch(e) { toast('Error: ' + e.message); }
+  });
+
   // ── Chat ──
   var chatMessages = document.getElementById('chat-messages');
   var chatInput = document.getElementById('chat-input');
@@ -422,6 +531,8 @@
           // Sync input fields from server draft if set_variables was called
           var changedDraft = data.tool_calls.some(function(t) { return t.tool === 'set_variables' || t.tool === 'commit_draft'; });
           if (changedDraft) await syncDraftFromServer();
+          var changedNotes = data.tool_calls.some(function(t) { return t.tool === 'create_note' || t.tool === 'update_note' || t.tool === 'delete_note'; });
+          if (changedNotes && document.getElementById('panel-notes').classList.contains('active')) await loadNotes();
         }
         chatHistory.push({ role: 'user', content: msg });
         chatHistory.push({ role: 'assistant', content: data.reply });

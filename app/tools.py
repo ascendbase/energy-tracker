@@ -166,6 +166,112 @@ TOOL_SCHEMAS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    # ── 9. Create note ──
+    {
+        "type": "function",
+        "function": {
+            "name": "create_note",
+            "description": (
+                "Create a new note with a title and optional content. "
+                "Use this when the user says 'create a note', 'write this down', "
+                "or 'add a note'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Note title"},
+                    "content": {"type": "string", "description": "Note content (optional, defaults to empty)"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    # ── 10. Get all notes ──
+    {
+        "type": "function",
+        "function": {
+            "name": "get_all_notes",
+            "description": (
+                "Get all notes (id, title, content, timestamps), ordered by "
+                "most recently updated. Use when the user asks to 'show notes' "
+                "or 'list my notes'."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    # ── 11. Get a single note ──
+    {
+        "type": "function",
+        "function": {
+            "name": "get_note",
+            "description": (
+                "Get a single note by its ID. Use get_all_notes first to find "
+                "the ID. Use when the user asks 'show me note X' or 'read note X'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "The note ID"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    # ── 12. Update note ──
+    {
+        "type": "function",
+        "function": {
+            "name": "update_note",
+            "description": (
+                "Update a note's title and/or content by ID. Only provided "
+                "fields are changed. Use get_all_notes first to find the ID."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "The note ID to update"},
+                    "title": {"type": "string", "description": "New title (optional)"},
+                    "content": {"type": "string", "description": "New content (optional)"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    # ── 13. Delete note ──
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_note",
+            "description": (
+                "Delete a note by its ID. Use get_all_notes first to find the ID."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer", "description": "The note ID to delete"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    # ── 14. Search notes ──
+    {
+        "type": "function",
+        "function": {
+            "name": "search_notes",
+            "description": (
+                "Search notes by title or content. Use when the user asks "
+                "'find my note about X' or 'search for X in notes'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -246,6 +352,61 @@ def execute_tool(name: str, arguments: dict) -> str:
         elif name == "get_today_date":
             return json.dumps({"success": True, "date": db.today_str()})
 
+        elif name == "create_note":
+            title = arguments.get("title", "")
+            content = arguments.get("content", "")
+            note = db.create_note(title, content)
+            return json.dumps({
+                "success": True,
+                "message": f"Created note #{note['id']}: '{title}'",
+            })
+
+        elif name == "get_all_notes":
+            notes = db.get_all_notes()
+            return json.dumps({
+                "success": True,
+                "count": len(notes),
+                "message": _format_notes_list(notes),
+            })
+
+        elif name == "get_note":
+            note_id = int(arguments["id"])
+            note = db.get_note(note_id)
+            if not note:
+                return json.dumps({"success": False, "error": f"Note {note_id} not found"})
+            return json.dumps({
+                "success": True,
+                "message": f"Note #{note_id}: '{note['title']}'\n\n{note['content']}",
+            })
+
+        elif name == "update_note":
+            note_id = int(arguments["id"])
+            title = arguments.get("title")
+            content = arguments.get("content")
+            note = db.update_note(note_id, title, content)
+            if not note:
+                return json.dumps({"success": False, "error": f"Note {note_id} not found"})
+            return json.dumps({
+                "success": True,
+                "message": f"Updated note #{note_id}: '{note['title']}'",
+            })
+
+        elif name == "delete_note":
+            note_id = int(arguments["id"])
+            deleted = db.delete_note(note_id)
+            if not deleted:
+                return json.dumps({"success": False, "error": f"Note {note_id} not found"})
+            return json.dumps({"success": True, "message": f"Deleted note #{note_id}"})
+
+        elif name == "search_notes":
+            query = arguments.get("query", "")
+            notes = db.search_notes(query)
+            return json.dumps({
+                "success": True,
+                "count": len(notes),
+                "message": _format_notes_list(notes, f"Search results for '{query}'"),
+            })
+
         else:
             return json.dumps({"success": False, "error": f"Unknown tool: {name}"})
 
@@ -283,3 +444,17 @@ def _format_stats(stats: dict, days: int) -> str:
         vars_str = ", ".join(f"{k.upper()}={v}" for k, v in top_vars)
         s += f". Avg by var: {vars_str}"
     return s
+
+
+def _format_notes_list(notes: list, prefix: str = "Notes") -> str:
+    if not notes:
+        return f"{prefix}: none found"
+    lines = [f"{prefix}: {len(notes)} note(s)"]
+    for n in notes:
+        title = n.get("title", "(untitled)")
+        content_preview = (n.get("content", "") or "")[:80]
+        if content_preview:
+            lines.append(f"  #{n['id']}: '{title}' — {content_preview}...")
+        else:
+            lines.append(f"  #{n['id']}: '{title}' (empty)")
+    return "\n".join(lines)
