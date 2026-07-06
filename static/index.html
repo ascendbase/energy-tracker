@@ -18,7 +18,7 @@
     --danger: #ff3b30;
     --success: #34c759;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
   html, body {
     min-height: 100vh;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
@@ -116,9 +116,9 @@
   .note-preview { font-size: 13px; color: var(--muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .note-content-area { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
   .note-content-area.show { display: block; }
-  .note-textarea { width: 100%; min-height: 120px; padding: 12px; font-size: 15px; font-family: inherit; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; background: rgba(255,255,255,0.7); color: var(--text); resize: vertical; outline: none; }
+  .note-textarea { width: 100%; min-height: 120px; padding: 12px; font-size: 16px; font-family: inherit; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; background: rgba(255,255,255,0.7); color: var(--text); resize: vertical; outline: none; }
   .note-textarea:focus { border-color: rgba(0,0,0,0.4); }
-  .note-title-input { width: 100%; padding: 8px 12px; font-size: 15px; font-weight: 600; border: 1px solid var(--accent); border-radius: 8px; font-family: inherit; margin-bottom: 8px; }
+  .note-title-input { width: 100%; padding: 8px 12px; font-size: 16px; font-weight: 600; border: 1px solid var(--accent); border-radius: 8px; font-family: inherit; margin-bottom: 8px; }
   .add-note-btn { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; color: var(--text); background: rgba(0,0,0,0.06); border: none; border-radius: 14px; cursor: pointer; font-family: inherit; transition: background 0.2s; margin-bottom: 12px; }
   .add-note-btn:hover { background: rgba(0,0,0,0.12); }
   .chat-container { display: flex; flex-direction: column; height: 100%; gap: 0; }
@@ -129,12 +129,57 @@
   .chat-msg.error { align-self: center; background: rgba(255,59,48,0.1); color: var(--danger); font-size: 13px; text-align: center; }
   .chat-tool-badge { font-size: 11px; color: var(--muted); margin-top: 4px; font-style: italic; }
   .chat-input-row { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
-  .chat-input { flex: 1; padding: 12px 16px; font-size: 15px; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; outline: none; background: rgba(255,255,255,0.7); font-family: inherit; transition: border-color 0.2s; }
+  .chat-input { flex: 1; padding: 12px 16px; font-size: 16px; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; outline: none; background: rgba(255,255,255,0.7); font-family: inherit; transition: border-color 0.2s; }
   .chat-input:focus { border-color: rgba(0,0,0,0.3); }
   .chat-send { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 18px; border: none; border-radius: 50%; background: var(--text); color: #fff; cursor: pointer; transition: opacity 0.2s; flex-shrink: 0; }
   .chat-send:disabled { opacity: 0.3; cursor: not-allowed; }
   .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); padding: 12px 24px; background: var(--text); color: #fff; border-radius: 14px; font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 999; }
   .toast.show { opacity: 1; }
+
+  /* ── Mobile optimizations ── */
+  @media (max-width: 480px) {
+    html, body {
+      padding: 0;
+      align-items: stretch;
+    }
+    .card {
+      max-width: 100%;
+      max-height: 100vh;
+      min-height: 100vh;
+      border-radius: 0;
+      border: none;
+      box-shadow: none;
+      padding: 16px 14px;
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+    }
+    .tabs {
+      gap: 3px;
+      padding: 3px;
+      margin-bottom: 16px;
+    }
+    .tab {
+      font-size: 12px;
+      padding: 8px 0;
+      border-radius: 9px;
+    }
+    h1 { font-size: 22px; }
+    .subtitle { font-size: 13px; margin-bottom: 16px; }
+    .group { gap: 10px; margin-bottom: 16px; }
+    input { padding: 12px 14px; font-size: 16px; }
+    .result { padding: 12px 14px; }
+    .result .value { font-size: 19px; }
+    .result .name { font-size: 14px; }
+    .result .formula { font-size: 10px; }
+    .save-btn { padding: 14px; font-size: 16px; }
+    .icon-btn { width: 36px; height: 36px; font-size: 17px; }
+    .chat-msg { font-size: 15px; padding: 10px 14px; }
+    .chat-send { width: 40px; height: 40px; }
+    .note-item, .log-item { padding: 12px 14px; }
+    .note-textarea { min-height: 100px; }
+    .toast { bottom: max(20px, env(safe-area-inset-bottom)); }
+  }
+
   @media (prefers-color-scheme: dark) {
     :root { --glass: rgba(28, 28, 30, 0.6); --glass-border: rgba(255, 255, 255, 0.1); --text: #f5f5f7; --muted: #98989d; --accent: #ffffff; --panel-bg: rgba(255, 255, 255, 0.06); --panel-border: rgba(255,255,255,0.08); }
     body { background: linear-gradient(160deg, #1c1c1e 0%, #000000 100%); }
