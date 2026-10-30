@@ -12,10 +12,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 from . import database as db
-from .calculator import calculate_from_dict, VARIABLES
-from .ai_agent import chat as ai_chat
 
-app = FastAPI(title="Energy Tracker API")
+app = FastAPI(title="Habit Tracker API")
 
 try:
     from dotenv import load_dotenv
@@ -28,7 +26,6 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(
 
 # On Vercel, the project root is different
 if not os.path.isdir(STATIC_DIR):
-    # Try Vercel's project root
     _vercel_root = os.environ.get("VERCEL_PROJECT_ROOT", "")
     if _vercel_root:
         STATIC_DIR = os.path.join(_vercel_root, "static")
@@ -49,7 +46,6 @@ def startup():
     _ensure_db()
 
 
-# ── Middleware: ensure DB is initialized for every request ─────────
 @app.middleware("http")
 async def ensure_db_middleware(request, call_next):
     _ensure_db()
@@ -57,122 +53,68 @@ async def ensure_db_middleware(request, call_next):
     return response
 
 
-# ── API: Calculator (no saving) ───────────────────────────────────
+# ── API: Habits ───────────────────────────────────────────────────
 
-class CalcRequest(BaseModel):
-    fh: Optional[float] = None
-    fac: Optional[float] = None
-    fic: Optional[float] = None
-    tac: Optional[float] = None
-    ec: Optional[float] = None
-    b: Optional[float] = None
-    nm: Optional[float] = None
-    trio: Optional[float] = None
-    fmf: Optional[float] = None
-    sr: Optional[float] = None
-    p: Optional[float] = None
-    sm: Optional[float] = None
+class HabitCreateRequest(BaseModel):
+    name: str
 
 
-@app.post("/api/calculate")
-def calculate(req: CalcRequest):
-    """Calculate TS from component variables. None = not entered."""
-    values = {k: v for k, v in req.model_dump().items()}
-    return calculate_from_dict(values)
+class HabitRenameRequest(BaseModel):
+    name: str
 
 
-# ── API: Draft (today's in-progress entry) ────────────────────────
-
-class DraftRequest(BaseModel):
-    date: Optional[str] = None
-    fh: Optional[float] = None
-    fac: Optional[float] = None
-    fic: Optional[float] = None
-    tac: Optional[float] = None
-    ec: Optional[float] = None
-    b: Optional[float] = None
-    nm: Optional[float] = None
-    trio: Optional[float] = None
-    fmf: Optional[float] = None
-    sr: Optional[float] = None
-    p: Optional[float] = None
-    sm: Optional[float] = None
+class HabitValueRequest(BaseModel):
+    value: Optional[float] = None
 
 
-@app.get("/api/draft")
-def get_draft(date: Optional[str] = None):
-    """Get today's draft entry (or by date)."""
-    entry = db.get_draft(date)
-    return {"entry": entry}
+@app.get("/api/habits")
+def list_habits():
+    """Get all habits with their current values."""
+    return {"habits": db.get_habits()}
 
 
-@app.post("/api/draft")
-def save_draft(req: DraftRequest):
-    """Save/update today's draft. Only provided fields are changed."""
-    date_str = req.date or db.today_str()
-    # Only include non-None values (so we don't overwrite existing vars with None)
-    values = {k: v for k, v in req.model_dump().items() if k != "date" and v is not None}
-    if not values:
-        # No values to update — just return existing draft
-        return {"entry": db.get_draft(date_str)}
-    entry = db.save_draft(date_str, values)
-    return {"success": True, "entry": entry}
+@app.post("/api/habits")
+def add_habit(req: HabitCreateRequest):
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Habit name cannot be empty")
+    habit = db.create_habit(name)
+    return {"success": True, "habit": habit}
 
 
-@app.post("/api/draft/commit")
-def commit_draft(date: Optional[str] = None):
-    """Commit today's draft as a permanent log entry."""
-    entry = db.commit_draft(date)
-    if not entry:
-        raise HTTPException(status_code=404, detail="No draft found to commit")
-    return {"success": True, "entry": entry}
+@app.patch("/api/habits/{habit_id}")
+def rename_habit(habit_id: int, req: HabitRenameRequest):
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Habit name cannot be empty")
+    habit = db.rename_habit(habit_id, name)
+    if not habit:
+        raise HTTPException(status_code=404, detail=f"Habit {habit_id} not found")
+    return {"success": True, "habit": habit}
 
 
-# ── API: Committed entries (Logs) ─────────────────────────────────
-
-@app.get("/api/entries")
-def get_entries():
-    """Get all committed entries, ordered by date descending."""
-    return {"entries": db.get_committed_entries()}
-
-
-@app.get("/api/entries/{entry_id}")
-def get_entry_by_id(entry_id: int):
-    """Get a specific entry by ID."""
-    entry = db.get_entry_by_id(entry_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
-    return {"entry": entry}
+@app.put("/api/habits/{habit_id}/value")
+def update_habit_value(habit_id: int, req: HabitValueRequest):
+    """Set (or clear, with null) a habit's value."""
+    habit = db.set_habit_value(habit_id, req.value)
+    if not habit:
+        raise HTTPException(status_code=404, detail=f"Habit {habit_id} not found")
+    return {"success": True, "habit": habit}
 
 
-@app.delete("/api/entries/{entry_id}")
-def delete_entry(entry_id: int):
-    """Delete an entry by ID."""
-    deleted = db.delete_entry(entry_id)
+@app.delete("/api/habits/{habit_id}")
+def remove_habit(habit_id: int):
+    deleted = db.delete_habit(habit_id)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Entry {entry_id} not found")
+        raise HTTPException(status_code=404, detail=f"Habit {habit_id} not found")
     return {"success": True}
 
 
-# ── API: Stats (committed only) ───────────────────────────────────
-
-@app.get("/api/stats")
-def get_stats(days: int = 30):
-    return db.get_stats(days)
-
-
-# ── API: AI Chat ──────────────────────────────────────────────────
-
-class ChatRequest(BaseModel):
-    message: str
-    history: list[dict] = []
-    model: Optional[str] = None
-
-
-@app.post("/api/chat")
-def chat_endpoint(req: ChatRequest):
-    result = ai_chat(req.message, req.history, req.model)
-    return result
+@app.post("/api/habits/reset")
+def reset_habits():
+    """Reset all habit values (habits list is kept)."""
+    count = db.reset_habits()
+    return {"success": True, "reset": count}
 
 
 # ── API: Notes CRUD ───────────────────────────────────────────────

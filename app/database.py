@@ -1,18 +1,17 @@
 """
 Database layer — transparently uses local SQLite (dev) or Turso (prod).
 
-Schema: entries table stores all 12 variables as NULLABLE columns.
-  NULL = not entered yet
-  0    = entered as zero
-  is_committed: 0 = draft (in progress), 1 = committed permanent log
+Schema:
+  habits: user-defined habit list (persisted until deleted by the user)
+  habits.value: today's value per habit (NULL = not entered);
+                persisted until the user presses Reset.
+  notes: simple notes store.
 """
 
 import os
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime, date
-from .calculator import calculate_from_dict, VARIABLES
 
 # ── Turso support (optional) ──────────────────────────────────────
 _turso_url = os.environ.get("TURSO_URL")
@@ -64,250 +63,81 @@ def get_conn():
         raise
 
 
-# ── Schema ────────────────────────────────────────────────────────
-
-_ENTRY_COLUMNS = (
-    "fh", "fac", "fic", "tac", "ec",
-    "b", "nm", "trio", "fmf", "sr", "p", "sm"
-)
-
-_SCHEMA_COLS = {
-    "id":         "INTEGER PRIMARY KEY AUTOINCREMENT",
-    "date":       "TEXT NOT NULL UNIQUE",
-    **{c: "REAL" for c in _ENTRY_COLUMNS},  # NULLABLE — not entered = NULL
-    "ts":         "REAL",
-    "is_committed": "INTEGER NOT NULL DEFAULT 0",
-    "created_at": "TEXT NOT NULL DEFAULT (datetime('now'))",
-    "updated_at": "TEXT NOT NULL DEFAULT (datetime('now'))",
-}
-
-
-def init_db():
-    """Create tables if they don't exist, and migrate old schemas."""
-    with get_conn() as conn:
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(entries)").fetchall()]
-
-        if not cols:
-            # Fresh table
-            col_defs = ", ".join(f"{k} {v}" for k, v in _SCHEMA_COLS.items())
-            conn.execute(f"CREATE TABLE entries ({col_defs})")
-        else:
-            # Migrate: add any missing columns
-            for col_name, col_def in _SCHEMA_COLS.items():
-                if col_name not in cols:
-                    # ALTER TABLE ADD COLUMN can't specify PRIMARY KEY etc
-                    if "PRIMARY KEY" in col_def or "AUTOINCREMENT" in col_def:
-                        continue
-                    conn.execute(f"ALTER TABLE entries ADD COLUMN {col_name} {col_def}")
-
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_entries_committed ON entries(is_committed)")
-
-        # ── Notes table ──
-        note_cols = [r[1] for r in conn.execute("PRAGMA table_info(notes)").fetchall()]
-        if not note_cols:
-            conn.execute("""
-                CREATE TABLE notes (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title      TEXT NOT NULL DEFAULT '',
-                    content    TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-                )
-            """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at)")
-
-
-# ── Helpers ───────────────────────────────────────────────────────
-
-def _row_to_dict(row, cursor=None) -> dict:
-    """Convert a database row to dict. Works with both sqlite3.Row and libsql rows."""
-    if row is None:
-        return {}
-    # sqlite3.Row supports dict() conversion
-    try:
-        return dict(row)
-    except (TypeError, ValueError):
-        pass
-    # libsql returns tuples — use cursor description for column names
-    if cursor and hasattr(cursor, 'description') and cursor.description:
-        cols = [d[0] for d in cursor.description]
-        return dict(zip(cols, row))
-    # Last resort: check if it has keys()
-    if hasattr(row, 'keys'):
-        return {k: row[k] for k in row.keys()}
-    return {}
+def _row_to_dict(row) -> dict:
+    return dict(row) if row is not None else None
 
 
 def _fetch_one(conn, query, params=()):
-    """Execute query and return a single row as dict. Works with sqlite3 and libsql."""
-    cur = conn.execute(query, params)
-    row = cur.fetchone()
-    return _row_to_dict(row, cur) if row else None
+    row = conn.execute(query, params).fetchone()
+    return _row_to_dict(row)
 
 
 def _fetch_all(conn, query, params=()):
-    """Execute query and return all rows as list of dicts. Works with sqlite3 and libsql."""
-    cur = conn.execute(query, params)
-    rows = cur.fetchall()
-    return [_row_to_dict(row, cur) for row in rows]
+    return [_row_to_dict(r) for r in conn.execute(query, params).fetchall()]
 
 
-def _compute_ts(values: dict) -> float | None:
-    """Calculate TS from a dict of variable values (None = not entered)."""
-    result = calculate_from_dict(values)
-    return result["ts"]
+# ── Schema ────────────────────────────────────────────────────────
+
+_DEFAULT_HABITS = ["B", "NM", "Trio", "FMF", "SR", "P", "SM"]
 
 
-def today_str() -> str:
-    return date.today().isoformat()
-
-
-# ── Draft operations ──────────────────────────────────────────────
-
-def get_draft(date_str: str | None = None) -> dict | None:
-    """Get the draft (uncommitted) entry for a date. Defaults to today."""
-    if date_str is None:
-        date_str = today_str()
+def init_db():
+    """Create tables if they don't exist."""
     with get_conn() as conn:
-        return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,))
-
-
-def save_draft(date_str: str, values: dict) -> dict:
-    """
-    Insert or update a draft entry.
-    Only provided keys are set; others are left as-is (or NULL if new).
-    NULL = not entered. 0 = entered as zero.
-    """
-    existing = get_draft(date_str)
-    if existing:
-        # Merge: keep existing values for keys not in `values`
-        merged = {c: existing[c] for c in _ENTRY_COLUMNS}
-        for k, v in values.items():
-            if k in _ENTRY_COLUMNS:
-                merged[k] = v  # can be None or a number
-    else:
-        merged = {c: values.get(c, None) for c in _ENTRY_COLUMNS}
-
-    ts = _compute_ts(merged)
-
-    if existing:
-        sets = ", ".join(f"{c} = ?" for c in _ENTRY_COLUMNS)
-        # Order: var1...var12, ts, date
-        params = [merged[c] for c in _ENTRY_COLUMNS] + [ts, date_str]
-        with get_conn() as conn:
-            conn.execute(
-                f"UPDATE entries SET {sets}, ts = ?, updated_at = datetime('now') WHERE date = ?",
-                params
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS habits (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                value      REAL,
+                position   INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
-            conn.commit()
-            return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,)) or {"date": date_str, "ts": ts}
-    else:
-        cols = ", ".join(_ENTRY_COLUMNS)
-        placeholders = ", ".join(["?"] * len(_ENTRY_COLUMNS))
-        # Order: date, var1...var12, ts
-        params = [date_str] + [merged[c] for c in _ENTRY_COLUMNS] + [ts]
-        with get_conn() as conn:
-            cur = conn.execute(
-                f"INSERT INTO entries (date, {cols}, ts) VALUES (?, {placeholders}, ?)",
-                params
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                title      TEXT NOT NULL,
+                content    TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             )
-            conn.commit()
-            return _fetch_one(conn, "SELECT * FROM entries WHERE id = ?", (cur.lastrowid,)) or {"date": date_str, "ts": ts}
+        """)
+        # Seed default habits on a fresh database
+        count = conn.execute("SELECT COUNT(*) FROM habits").fetchone()[0]
+        if count == 0:
+            for i, name in enumerate(_DEFAULT_HABITS):
+                conn.execute(
+                    "INSERT INTO habits (name, position) VALUES (?, ?)",
+                    (name, i)
+                )
 
 
-def commit_draft(date_str: str | None = None) -> dict | None:
-    """Commit today's draft as a permanent log entry."""
-    if date_str is None:
-        date_str = today_str()
+# ── Habits ────────────────────────────────────────────────────────
+
+def get_habits() -> list[dict]:
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE entries SET is_committed = 1, updated_at = datetime('now') WHERE date = ?",
-            (date_str,)
+        return _fetch_all(
+            conn,
+            "SELECT id, name, value FROM habits ORDER BY position, id"
         )
-        conn.commit()
-        return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,))
 
 
-# ── Committed entry operations ────────────────────────────────────
-
-def get_committed_entries() -> list[dict]:
-    """Get all committed entries, ordered by date descending."""
+def create_habit(name: str) -> dict:
     with get_conn() as conn:
-        return _fetch_all(conn, "SELECT * FROM entries WHERE is_committed = 1 ORDER BY date DESC")
+        pos = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM habits"
+        ).fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO habits (name, position) VALUES (?, ?)", (name, pos)
+        )
+        return _fetch_one(conn, "SELECT id, name, value FROM habits WHERE id = ?", (cur.lastrowid,))
 
 
-def get_entry_by_date(date_str: str) -> dict | None:
-    """Get entry (draft or committed) by date."""
+def rename_habit(habit_id: int, name: str) -> dict | None:
+    """Rename a habit."""
     with get_conn() as conn:
-        return _fetch_one(conn, "SELECT * FROM entries WHERE date = ?", (date_str,))
-
-
-def get_entry_by_id(entry_id: int) -> dict | None:
-    with get_conn() as conn:
-        return _fetch_one(conn, "SELECT * FROM entries WHERE id = ?", (entry_id,))
-
-
-def delete_entry(entry_id: int) -> bool:
-    with get_conn() as conn:
-        cur = conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-        return cur.rowcount > 0
-
-
-# ── Stats (committed entries only) ────────────────────────────────
-
-def get_stats(days: int = 30) -> dict:
-    """Get statistics for committed entries over the last N days."""
-    with get_conn() as conn:
-        rows = _fetch_all(conn, """
-            SELECT * FROM entries
-            WHERE is_committed = 1 AND date >= date('now', ?)
-            ORDER BY date ASC
-        """, (f"-{days} days",))
-
-        if not rows:
-            return {
-                "count": 0, "avg": None, "min": None,
-                "max": None, "latest": None, "latest_date": None,
-                "trend": None, "values": []
-            }
-
-        entries = rows
-        ts_values = [e["ts"] for e in entries if e["ts"] is not None]
-        if not ts_values:
-            return {
-                "count": 0, "avg": None, "min": None,
-                "max": None, "latest": None, "latest_date": None,
-                "trend": None, "values": []
-            }
-
-        avg = sum(ts_values) / len(ts_values)
-        mid = len(ts_values) // 2
-        if mid > 0:
-            first_half_avg = sum(ts_values[:mid]) / mid
-            second_half_avg = sum(ts_values[mid:]) / (len(ts_values) - mid)
-            trend = second_half_avg - first_half_avg
-        else:
-            trend = 0.0
-
-        var_avgs = {}
-        for v in _ENTRY_COLUMNS:
-            vals = [e[v] for e in entries if e[v] is not None]
-            if vals:
-                var_avgs[v] = round(sum(vals) / len(vals), 2)
-
-        return {
-            "count": len(ts_values),
-            "avg": round(avg, 2),
-            "min": round(min(ts_values), 2),
-            "max": round(max(ts_values), 2),
-            "latest": ts_values[-1],
-            "latest_date": entries[-1]["date"],
-            "trend": round(trend, 2),
-            "values": [{"date": e["date"], "ts": e["ts"]} for e in entries],
-            "var_avgs": var_avgs,
-        }
-
+        conn.execute("UPDATE habits SET name = ? WHERE id = ?", (name, habit_id))
+        return _fetch_one(conn, "SELECT id, name, value FROM habits WHERE id = ?", (habit_id,))
 
 # ── Notes CRUD ────────────────────────────────────────────────────
 
@@ -318,7 +148,6 @@ def create_note(title: str, content: str = "") -> dict:
             "INSERT INTO notes (title, content) VALUES (?, ?)",
             (title, content)
         )
-        conn.commit()
         return _fetch_one(conn, "SELECT * FROM notes WHERE id = ?", (cur.lastrowid,))
 
 
@@ -350,14 +179,12 @@ def update_note(note_id: int, title: str | None = None,
     params.append(note_id)
     with get_conn() as conn:
         conn.execute(f"UPDATE notes SET {', '.join(sets)} WHERE id = ?", params)
-        conn.commit()
         return _fetch_one(conn, "SELECT * FROM notes WHERE id = ?", (note_id,))
 
 
 def delete_note(note_id: int) -> bool:
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
-        conn.commit()
         return cur.rowcount > 0
 
 
@@ -370,3 +197,22 @@ def search_notes(query: str) -> list[dict]:
             "SELECT * FROM notes WHERE title LIKE ? OR content LIKE ? ORDER BY updated_at DESC",
             (pattern, pattern)
         )
+
+
+def set_habit_value(habit_id: int, value: float | None) -> dict | None:
+    with get_conn() as conn:
+        conn.execute("UPDATE habits SET value = ? WHERE id = ?", (value, habit_id))
+        return _fetch_one(conn, "SELECT id, name, value FROM habits WHERE id = ?", (habit_id,))
+
+
+def delete_habit(habit_id: int) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM habits WHERE id = ?", (habit_id,))
+        return cur.rowcount > 0
+
+
+def reset_habits() -> int:
+    """Clear all habit values (habits themselves are kept)."""
+    with get_conn() as conn:
+        cur = conn.execute("UPDATE habits SET value = NULL")
+        return cur.rowcount
