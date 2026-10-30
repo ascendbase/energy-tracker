@@ -68,17 +68,34 @@ def get_conn():
         raise
 
 
-def _row_to_dict(row) -> dict:
-    return dict(row) if row is not None else None
+def _row_to_dict(row, cursor=None) -> dict:
+    """Convert a database row to dict. Works with both sqlite3.Row and libsql rows."""
+    if row is None:
+        return None
+    # sqlite3.Row supports dict() conversion
+    try:
+        return dict(row)
+    except (TypeError, ValueError):
+        pass
+    # libsql rows may be plain tuples — use the cursor's column description
+    if cursor is not None and getattr(cursor, "description", None):
+        cols = [d[0] for d in cursor.description]
+        return dict(zip(cols, row))
+    if hasattr(row, "keys"):
+        return {k: row[k] for k in row.keys()}
+    return dict(row)
 
 
 def _fetch_one(conn, query, params=()):
-    row = conn.execute(query, params).fetchone()
-    return _row_to_dict(row)
+    cur = conn.execute(query, params)
+    row = cur.fetchone()
+    return _row_to_dict(row, cur) if row else None
 
 
 def _fetch_all(conn, query, params=()):
-    return [_row_to_dict(r) for r in conn.execute(query, params).fetchall()]
+    cur = conn.execute(query, params)
+    rows = cur.fetchall()
+    return [_row_to_dict(row, cur) for row in rows]
 
 
 # ── Schema ────────────────────────────────────────────────────────
