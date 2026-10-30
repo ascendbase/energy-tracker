@@ -169,9 +169,22 @@ def delete_note(note_id: int):
 
 # ── Health check ──────────────────────────────────────────────────
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc):
+    """Surface real error text so deployment issues are diagnosable."""
+    import traceback
+    print("UNHANDLED ERROR:", "".join(traceback.format_exception(exc)))
+    return JSONResponse({"error": f"{type(exc).__name__}: {exc}"}, status_code=500)
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "turso": bool(os.environ.get("TURSO_URL"))}
+    from . import database as dbmod
+    return {
+        "status": "ok",
+        "turso": dbmod._USE_TURSO,
+        "db_path": dbmod._LOCAL_DB if not dbmod._USE_TURSO else "turso",
+    }
 
 
 # ── Static file serving (local dev) ───────────────────────────────

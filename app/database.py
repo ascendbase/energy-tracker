@@ -29,10 +29,15 @@ else:
     _USE_TURSO = False
 
 # ── Local SQLite path ─────────────────────────────────────────────
-_LOCAL_DB = os.environ.get("DATABASE_PATH", os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "energy.db"
-))
+# On Vercel the project filesystem is read-only; only /tmp is writable.
+if os.environ.get("VERCEL"):
+    _DEFAULT_PATH = "/tmp/energy.db"
+else:
+    _DEFAULT_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "energy.db"
+    )
+_LOCAL_DB = os.environ.get("DATABASE_PATH", _DEFAULT_PATH)
 
 _thread_local = threading.local()
 
