@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Habit Tracker</title>
 <style>
   :root {
@@ -20,18 +20,18 @@
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
   html, body {
-    min-height: 100vh;
+    height: 100%; width: 100%; position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; touch-action: pan-y;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
     color: var(--text);
     background: linear-gradient(160deg, #ffffff 0%, #e8e8ec 100%);
-    background-attachment: fixed;
+    
     display: flex; align-items: center; justify-content: center; padding: 24px;
   }
   .card {
-    width: 100%; max-width: 440px; background: var(--glass);
+    width: 100%; max-width: 440px; height: calc(100% - 48px); max-height: 780px; background: var(--glass);
     backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
     border: 1px solid var(--glass-border); border-radius: var(--radius);
-    box-shadow: var(--shadow); padding: 32px 28px; max-height: 90vh;
+    box-shadow: var(--shadow); padding: 32px 28px; overflow: hidden;
     display: flex; flex-direction: column;
   }
   h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
@@ -43,15 +43,15 @@
     transition: background 0.2s, color 0.2s; user-select: none;
   }
   .tab.active { background: #fff; color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-  .panel { display: none; overflow-y: auto; flex: 1; }
-  .panel.active { display: block; }
+  .panel { display: none; overflow: hidden; flex: 1; min-height: 0; flex-direction: column; }
+  .panel.active { display: flex; }
   .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
 
   /* Tracker habits */
   .habit-item {
     display: flex; align-items: center; gap: 10px;
     padding: 12px 14px; background: var(--panel-bg);
-    border: 1px solid var(--panel-border); border-radius: 14px; margin-bottom: 10px;
+    border: 1px solid var(--panel-border); border-radius: 14px; margin-bottom: 10px; height: 64px; flex-shrink: 0; overflow: hidden;
   }
   .habit-name { flex: 1; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .habit-name input { width: 100%; padding: 6px 10px; font-size: 15px; border-radius: 10px; background: rgba(255,255,255,0.9); border: 1px solid var(--accent); font-weight: 600; font-family: inherit; color: var(--text); outline: none; }
@@ -101,11 +101,11 @@
   /* Notes list */
   .note-item {
     background: var(--panel-bg); border: 1px solid var(--panel-border);
-    border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; width: 100%; max-width: 100%; overflow: hidden;
     cursor: pointer; transition: background 0.15s;
   }
   .note-item:hover { background: rgba(255,255,255,0.9); }
-  .note-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .note-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; word-break: break-word; }
   .note-snippet { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .note-meta { font-size: 11px; color: #b0b0b5; margin-top: 6px; }
 
@@ -154,7 +154,7 @@
 
   @media (max-width: 480px) {
     html, body { padding: 0; align-items: stretch; }
-    .card { max-width: 100%; max-height: 100vh; min-height: 100vh; border-radius: 0; border: none; padding: 16px 14px; }
+    .card { max-width: 100%; width: 100%; height: 100%; max-height: none; border-radius: 0; border: none; box-shadow: none; padding: 16px 14px; padding-top: max(16px, env(safe-area-inset-top)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
     h1 { font-size: 22px; }
     .tab { font-size: 12px; padding: 8px 0; }
   }
@@ -169,6 +169,19 @@
     .modal { background: #1c1c1e; }
     .btn.ghost { background: rgba(255,255,255,0.08); color: var(--text); }
     .btn.primary { background: #fff; color: #000; }
+  }
+
+  /* App-shell layout: page never scrolls, lists scroll internally */
+  #habits-list, #notes-list {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+  }
+  #habits-list { max-height: calc(4 * 64px + 3 * 10px); }
+  #notes-list { width: 100%; max-width: 100%; }
+  .add-row, .reset-btn, .final, .section-title { flex-shrink: 0; }
+  @media (max-width: 480px) {
+    .modal-overlay { padding: 10px; }
+    .modal { max-height: calc(100dvh - 20px); }
   }
 </style>
 </head>
