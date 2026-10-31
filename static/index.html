@@ -20,7 +20,7 @@
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
   html, body {
-    height: 100%; width: 100%; position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; touch-action: pan-y;
+    height: 100%; width: 100%; position: fixed; inset: 0; overflow: hidden; overscroll-behavior: none; touch-action: none; touch-action: pan-y;
     font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
     color: var(--text);
     background: linear-gradient(160deg, #ffffff 0%, #e8e8ec 100%);
@@ -50,13 +50,13 @@
   /* Tracker habits */
   .habit-item {
     display: flex; align-items: center; gap: 10px;
-    padding: 12px 14px; background: var(--panel-bg);
-    border: 1px solid var(--panel-border); border-radius: 14px; margin-bottom: 10px; height: 64px; flex-shrink: 0; overflow: hidden;
+    padding: 8px 10px; background: var(--panel-bg);
+    border: 1px solid var(--panel-border); border-radius: 14px; margin-bottom: 10px; height: 56px; flex-shrink: 0; overflow: hidden;
   }
   .habit-name { flex: 1; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .habit-name input { width: 100%; padding: 6px 10px; font-size: 15px; border-radius: 10px; background: rgba(255,255,255,0.9); border: 1px solid var(--accent); font-weight: 600; font-family: inherit; color: var(--text); outline: none; }
+  .habit-name input { width: 100%; padding: 6px 10px; font-size: 16px; border-radius: 10px; background: rgba(255,255,255,0.9); border: 1px solid var(--accent); font-weight: 600; font-family: inherit; color: var(--text); outline: none; }
   .habit-value {
-    width: 72px; padding: 8px 10px; font-size: 15px; font-weight: 600; text-align: center;
+    width: 70px; padding: 6px 8px; font-size: 16px; font-weight: 600; text-align: center;
     background: rgba(255,255,255,0.8); border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;
     outline: none; font-family: inherit; color: var(--text); flex-shrink: 0;
   }
@@ -129,7 +129,7 @@
   .modal-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
   .note-preview { font-size: 15px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
   .note-preview:empty::after { content: "This note is empty."; color: var(--muted); font-style: italic; }
-  .editor-area { width: 100%; min-height: 220px; padding: 12px 14px; font-size: 15px; line-height: 1.5;
+  .editor-area { width: 100%; min-height: 220px; padding: 12px 14px; font-size: 16px; line-height: 1.5;
     font-family: inherit; color: var(--text); background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.08);
     border-radius: 12px; outline: none; resize: vertical; }
   .editor-title { width: 100%; padding: 10px 14px; font-size: 16px; font-weight: 600; margin-bottom: 10px;
@@ -173,15 +173,42 @@
 
   /* App-shell layout: page never scrolls, lists scroll internally */
   #habits-list, #notes-list {
-    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overflow-x: hidden;
     overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y;
   }
-  #habits-list { max-height: calc(4 * 64px + 3 * 10px); }
+  #habits-list { max-height: calc(4 * 56px + 3 * 10px); }
   #notes-list { width: 100%; max-width: 100%; }
   .add-row, .reset-btn, .final, .section-title { flex-shrink: 0; }
   @media (max-width: 480px) {
     .modal-overlay { padding: 10px; }
     .modal { max-height: calc(100dvh - 20px); }
+  }
+
+  /* Compact mobile: fits viewport, symmetric margins, no iOS input auto-zoom */
+  @media (max-width: 480px) {
+    .card {
+      padding: 12px;
+      padding-top: max(10px, env(safe-area-inset-top));
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+      max-width: 100%; min-width: 0; overflow-x: clip;
+    }
+    .card > *, .panel > * { min-width: 0; }
+    h1 { font-size: 20px; margin-bottom: 2px; }
+    .subtitle { font-size: 12px; margin-bottom: 10px; }
+    .tabs { margin-bottom: 10px; }
+    .tab { padding: 8px 0; font-size: 13px; }
+    .section-title { margin-bottom: 8px; }
+    .add-row { margin-top: 10px; gap: 6px; }
+    .add-row input { padding: 10px 12px; font-size: 16px; }
+    .add-btn { padding: 0 14px; font-size: 14px; }
+    .reset-btn { margin-top: 8px; padding: 10px; font-size: 14px; }
+    .final { margin-top: 10px; }
+    .result { padding: 12px 16px; }
+    .result .value { font-size: 22px; }
+    .icon-btn { width: 30px; height: 30px; flex: 0 0 30px; font-size: 12px; }
+    .note-item { padding: 10px 12px; margin-bottom: 8px; }
+    .note-title { font-size: 15px; }
+    .editor-title, .editor-area { font-size: 16px; }
   }
 </style>
 </head>
