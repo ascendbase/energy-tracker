@@ -81,10 +81,10 @@
   .add-btn:hover { opacity: 0.85; }
   .reset-btn {
     margin-top: 14px; width: 100%; padding: 12px; border: none; border-radius: 12px;
-    background: rgba(255,59,48,0.1); color: var(--danger); font-size: 14px; font-weight: 600;
+    background: rgba(52,199,89,0.12); color: var(--success); font-size: 14px; font-weight: 600;
     cursor: pointer; transition: background 0.15s; font-family: inherit;
   }
-  .reset-btn:hover { background: rgba(255,59,48,0.18); }
+  .reset-btn:hover { background: rgba(52,199,89,0.22); }
   .empty-hint { font-size: 14px; color: var(--muted); text-align: center; padding: 18px 0; }
 
   /* Final TS */
@@ -169,6 +169,10 @@
     .modal { background: #1c1c1e; }
     .btn.ghost { background: rgba(255,255,255,0.08); color: var(--text); }
     .btn.primary { background: #fff; color: #000; }
+    .add-btn { background: #fff; color: #000; }
+    .result { background: #fff; color: #000; }
+    .result .value.empty { color: rgba(0,0,0,0.35); }
+    .toast { background: #fff; color: #000; }
   }
 
   /* App-shell layout: page never scrolls, lists scroll internally */
@@ -229,7 +233,7 @@
       <input type="text" id="new-habit-name" placeholder="New habit name" maxlength="60">
       <button class="add-btn" id="add-habit-btn">Add</button>
     </div>
-    <button class="reset-btn" id="reset-btn">Reset today's values</button>
+    <button class="reset-btn" id="reset-btn">Finished</button>
     <div class="final">
       <div class="result">
         <div class="label"><span class="name">TOTAL</span></div>
